@@ -91,6 +91,19 @@ Recommended practices:
 5. Open detailed panel via command:
    - `R Hidden Preview: Open Preview Panel`
 
+## Screenshots
+
+Add screenshots before Marketplace publishing to improve trust and clarity:
+
+- `docs/screenshots/inline-summary.png` (inline end-of-line summary)
+- `docs/screenshots/panel-text-result.png` (detail panel text output)
+- `docs/screenshots/panel-plot-result.png` (detail panel plot image preview)
+
+Suggested capture size:
+- width >= 1280px
+- clear light/dark theme contrast
+- avoid personal paths or sensitive data in editor tabs
+
 ## Settings
 
 All settings are under `rHiddenPreview`:
@@ -208,9 +221,9 @@ vsce publish
 ```
 
 Before publishing:
-- update `publisher` in `package.json`
 - set proper icon, repository, and changelog as needed
 - test on Windows/macOS/Linux with real R environments
+- add screenshots under `docs/screenshots/` and reference them in README
 
 ## Known Limitations (MVP)
 

@@ -3,8 +3,16 @@
   "displayName": "R Hidden Preview",
   "description": "Automatically run selected R code in the background and preview results inline and in a panel.",
   "version": "0.1.0",
-  "publisher": "your-publisher",
+  "publisher": "linxiangsun145",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/linxiangsun145/r-hidden-preview.git"
+  },
+  "bugs": {
+    "url": "https://github.com/linxiangsun145/r-hidden-preview/issues"
+  },
+  "homepage": "https://github.com/linxiangsun145/r-hidden-preview#readme",
   "engines": {
     "vscode": "^1.90.0"
   },
