@@ -6,6 +6,7 @@ When you select code in an `.R` file, the extension can:
 - execute in background with `Rscript --vanilla`
 - show a one-line inline summary at end-of-line
 - show detailed result in a dedicated preview panel
+- render plot output image in preview panel when plotting occurs
 
 This project is designed as a stable, maintainable first version suitable for Marketplace publishing and future iteration.
 
@@ -17,6 +18,12 @@ This project is designed as a stable, maintainable first version suitable for Ma
 - Two-layer result UI:
   - Inline summary (`TextEditorDecorationType`)
   - Detailed panel (`WebviewPanel`)
+- Plot preview support:
+  - Captures generated plot output as PNG
+  - Renders image in Webview detail panel
+- Missing package assistance:
+  - Detects common "package not installed" errors
+  - Prompts one-click `install.packages(...)`
 - Handles failure states with explicit feedback:
   - Rscript launch failure
   - execution error
@@ -129,14 +136,14 @@ Current result model:
 
 ```ts
 type PreviewResult =
-  | { kind: "text"; summary: string; detail?: string }
-  | { kind: "error"; summary: string; detail?: string };
+  | { kind: "text"; summary: string; detail?: string; plotPngBase64?: string }
+  | { kind: "error"; summary: string; detail?: string; plotPngBase64?: string };
 ```
 
 Design intent:
 - `summary` is used by inline preview.
 - `detail` is used by preview panel.
-- Easy to extend later to support table/plot/structured object previews.
+- `plotPngBase64` is used by Webview panel to render plot image previews.
 
 ## Project Structure
 
@@ -154,6 +161,7 @@ src/
   util/
     config.ts
     debounce.ts
+    rscriptResolver.ts
     selectionGuard.ts
     tempFiles.ts
 package.json
@@ -207,7 +215,6 @@ Before publishing:
 ## Known Limitations (MVP)
 
 - No persistent R session yet (each preview runs isolated process).
-- No plot image preview yet.
 - No table/grid renderer yet for data frames.
 - No cache/reuse for repeated selections.
 - Completeness check is heuristic, not a full parser.
@@ -215,12 +222,22 @@ Before publishing:
 ## Future Extensions
 
 Planned extension points are already prepared in architecture:
-- plot preview output pipeline
 - data.frame/tibble rich table rendering
 - long-lived R session mode
 - language server or hybrid architecture
 - cross-file context execution strategy
 - result cache and deduplication
+
+## Missing Package Install Prompt
+
+When execution fails because a package is missing, the extension will:
+- detect common missing-package error messages
+- prompt you to install detected package(s)
+- run `install.packages(...)` through `Rscript --vanilla -e`
+
+Notes:
+- package installation requires network access and write permission to your R library paths
+- installation logs are printed to `R Hidden Preview` output channel
 
 ## Troubleshooting
 
