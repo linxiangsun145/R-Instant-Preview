@@ -29,6 +29,9 @@ This project is designed as a stable, maintainable first version suitable for Ma
 - Missing package assistance:
   - Detects common "package not installed" errors
   - Prompts one-click `install.packages(...)`
+- Result cache:
+  - Reuses preview result for identical `hash(code + context)`
+  - Avoids duplicate execution for same expression/context
 - Safety rule engine for auto execution:
   - Auto-run only for simple safe expressions
   - Skip dangerous IO/system/package-management calls

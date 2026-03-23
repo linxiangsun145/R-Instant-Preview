@@ -8,6 +8,7 @@ import { InlinePreviewDecorations } from "./ui/decorations";
 import { PreviewPanel } from "./ui/previewPanel";
 import { PreviewResult } from "./types";
 import { resolveRscriptPath } from "./util/rscriptResolver";
+import { hashCodeContext } from "./util/hash";
 
 export function activate(context: vscode.ExtensionContext): void {
   const initialConfig = getConfig();
@@ -26,8 +27,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const recentlyPromptedPackages = new Map<string, number>();
   const installingPackages = new Set<string>();
   const promptCooldownMs = 60_000;
+	const cacheMaxEntries = 200;
+	const resultCache = new Map<string, PreviewResult>();
+	const inFlightTasks = new Map<string, RunningPreviewTask>();
   const debounced = createDebouncedExecutor(initialConfig.debounceMs);
 	let runningTask: RunningPreviewTask | undefined;
+	let runningTaskKey: string | undefined;
 	let currentRequestId = 0;
 
 	const openPanelCommand = vscode.commands.registerCommand("rHiddenPreview.openPreviewPanel", () => {
@@ -142,6 +147,32 @@ export function activate(context: vscode.ExtensionContext): void {
 
 		const fullCode = buildCodeByContextMode(editor, selection, config.contextMode);
 		const targetLine = selection.end.line;
+		const executionKey = hashCodeContext(fullCode, `${editor.document.fileName}\n${config.contextMode}`);
+
+		const cached = resultCache.get(executionKey);
+		if (cached) {
+			cancelRunningTask();
+			statusItem.text = "R Hidden Preview: Cache hit";
+			vscode.window.setStatusBarMessage("[R Hidden Preview] Cache hit. Reused previous result.", 2000);
+			publishResult(editor, cached, targetLine);
+			return;
+		}
+
+		const existingTask = inFlightTasks.get(executionKey);
+		if (existingTask) {
+			if (runningTaskKey !== executionKey) {
+				cancelRunningTask();
+			}
+
+			const requestId = ++currentRequestId;
+			statusItem.text = "R Hidden Preview: Reusing running task...";
+			const result = await existingTask.promise;
+			if (requestId !== currentRequestId) {
+				return;
+			}
+			publishResult(editor, result, targetLine);
+			return;
+		}
 
 		cancelRunningTask();
 		const requestId = ++currentRequestId;
@@ -152,11 +183,20 @@ export function activate(context: vscode.ExtensionContext): void {
 			timeoutMs: config.timeoutMs,
 			maxOutputLength: config.maxOutputLength
 		});
+		runningTaskKey = executionKey;
+		inFlightTasks.set(executionKey, runningTask);
 		statusItem.text = "R Hidden Preview: Running...";
 
 		const result = await runningTask.promise;
+		if (inFlightTasks.get(executionKey) === runningTask) {
+			inFlightTasks.delete(executionKey);
+		}
 		if (requestId !== currentRequestId) {
 			return;
+		}
+
+		if (result.kind === "text") {
+			putCache(executionKey, result);
 		}
 
 		publishResult(editor, result, targetLine);
@@ -279,8 +319,27 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	function cancelRunningTask(): void {
 		if (runningTask) {
+			if (runningTaskKey && inFlightTasks.get(runningTaskKey) === runningTask) {
+				inFlightTasks.delete(runningTaskKey);
+			}
 			runningTask.cancel();
 			runningTask = undefined;
+			runningTaskKey = undefined;
+		}
+	}
+
+	function putCache(key: string, result: PreviewResult): void {
+		if (resultCache.has(key)) {
+			resultCache.delete(key);
+		}
+
+		resultCache.set(key, result);
+		while (resultCache.size > cacheMaxEntries) {
+			const first = resultCache.keys().next().value as string | undefined;
+			if (!first) {
+				break;
+			}
+			resultCache.delete(first);
 		}
 	}
 
