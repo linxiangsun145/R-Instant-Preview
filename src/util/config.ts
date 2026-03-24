@@ -64,7 +64,11 @@ export function getConfig(): ExtensionConfig {
   );
   const contextModeValue = config.get<string>("contextMode", "documentBeforeSelection");
   const contextMode: ContextMode =
-    contextModeValue === "selectionOnly" ? "selectionOnly" : "documentBeforeSelection";
+    contextModeValue === "selectionOnly"
+      ? "selectionOnly"
+      : contextModeValue === "smartContext"
+        ? "smartContext"
+        : "documentBeforeSelection";
   const maxOutputLength = clampNumber(config.get<number>("maxOutputLength", 2000), 100, 100000);
   const showInlinePreview = config.get<boolean>("showInlinePreview", true);
   const showPanelPreview = config.get<boolean>("showPanelPreview", true);

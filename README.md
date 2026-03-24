@@ -62,6 +62,7 @@ This project is designed as a stable, maintainable first version suitable for Ma
 4. Build execution code based on context mode:
    - `selectionOnly`
    - `documentBeforeSelection` (default)
+  - `smartContext` (minimal dependency mode)
 5. Create temporary files:
    - payload R code
    - runner R script wrapper
@@ -79,6 +80,26 @@ Only executes currently selected code.
 ### `documentBeforeSelection` (default)
 Executes code from start of document to selection start, then selected code.
 
+### `smartContext`
+Analyzes the selected expression and recursively finds the minimal upstream assignments it depends on.
+
+Runtime validation behavior:
+
+- First run: minimal dependency chain from static analysis.
+- Validation: execute in long-lived R session.
+- Fallback: if execution fails (for example missing object), automatically retry with wider `documentBeforeSelection` context.
+
+Example:
+
+```r
+x <- 1:5
+y <- x * 2
+z <- y + 10
+mean(z)
+```
+
+When selecting `mean(z)`, smart context will include `z <- y + 10`, `y <- x * 2`, and `x <- 1:5`, but skip unrelated earlier statements.
+
 Important:
 - This mode may execute additional code and can cause side effects.
 - Side effects depend on your selected script content.
@@ -90,6 +111,7 @@ This extension executes R code in the background.
 Please read carefully:
 - Selected code is executed automatically when selection changes.
 - In `documentBeforeSelection` mode, code before selection is also executed.
+- In `smartContext` mode, only inferred dependency assignments are prepended to selection.
 - Any executed code may have side effects (file operations, network calls, state mutation, etc.).
 
 Recommended practices:
@@ -200,7 +222,7 @@ All settings are under `rHiddenPreview`:
 - `safeFunctionWhitelist` (string[], default: `[]`)
   - Optional allowed function names. If non-empty, only listed functions are auto-executed.
 - `contextMode` (enum, default: `documentBeforeSelection`)
-  - `selectionOnly` or `documentBeforeSelection`.
+  - `selectionOnly`, `documentBeforeSelection`, or `smartContext`.
 - `maxOutputLength` (number, default: 2000)
   - Maximum output length before truncation.
 - `showInlinePreview` (boolean, default: true)

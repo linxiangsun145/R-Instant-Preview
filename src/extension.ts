@@ -6,9 +6,10 @@ import { createDebouncedExecutor } from "./util/debounce";
 import { checkSelectionCompleteness, isSafeExpression } from "./util/selectionGuard";
 import { InlinePreviewDecorations } from "./ui/decorations";
 import { PreviewPanel } from "./ui/previewPanel";
-import { PreviewResult } from "./types";
+import { ContextMode, PreviewResult } from "./types";
 import { resolveRscriptPath } from "./util/rscriptResolver";
 import { hashCodeContext } from "./util/hash";
+import { buildSmartContextCode } from "./util/smartContext";
 
 export function activate(context: vscode.ExtensionContext): void {
   const initialConfig = getConfig();
@@ -225,9 +226,9 @@ export function activate(context: vscode.ExtensionContext): void {
 			return;
 		}
 
-		const fullCode = buildCodeByContextMode(editor, selection, config.contextMode);
+		const executionPlan = buildExecutionPlan(editor, selection, config.contextMode);
 		const targetLine = selection.end.line;
-		const executionKey = hashCodeContext(fullCode, `${editor.document.fileName}\n${config.contextMode}`);
+		const executionKey = hashCodeContext(executionPlan.primaryCode, `${editor.document.fileName}\n${config.contextMode}`);
 		const now = Date.now();
 
 		if (executionKey === lastExecutedKey && now - lastExecutedAt <= executionDedupWindowMs) {
@@ -264,12 +265,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		cancelRunningTask();
 		const requestId = ++currentRequestId;
 
-		runningTask = runner.run({
-			rscriptPath: config.rscriptPath,
-			fullCode,
-			timeoutMs: config.timeoutMs,
-			maxOutputLength: config.maxOutputLength
-		});
+		runningTask = createExecutionTask(executionPlan, config);
 		runningTaskKey = executionKey;
 		lastExecutedKey = executionKey;
 		lastExecutedAt = now;
@@ -289,6 +285,89 @@ export function activate(context: vscode.ExtensionContext): void {
 		}
 
 		publishResult(editor, result, targetLine);
+	}
+
+	function createExecutionTask(
+		executionPlan: ContextExecutionPlan,
+		config: ReturnType<typeof getConfig>
+	): RunningPreviewTask {
+		let activeTask: RunningPreviewTask | undefined;
+		let cancelled = false;
+
+		const promise = (async (): Promise<PreviewResult> => {
+			let lastResult: PreviewResult | undefined;
+			for (let i = 0; i < executionPlan.attemptCodes.length; i += 1) {
+				if (cancelled) {
+					return cancelledPreviewResult();
+				}
+
+				const code = executionPlan.attemptCodes[i];
+				if (executionPlan.attemptCodes.length > 1 && i > 0) {
+					statusItem.text = `R Hidden Preview: Fallback ${i + 1}/${executionPlan.attemptCodes.length}`;
+				}
+
+				activeTask = runner.run({
+					rscriptPath: config.rscriptPath,
+					fullCode: code,
+					timeoutMs: config.timeoutMs,
+					maxOutputLength: config.maxOutputLength
+				});
+
+				const result = await activeTask.promise;
+				if (cancelled) {
+					return cancelledPreviewResult();
+				}
+
+				if (result.kind === "text") {
+					if (i > 0) {
+						outputChannel.appendLine(
+							`[${new Date().toLocaleTimeString()}] SMART CONTEXT FALLBACK SUCCESS attempt ${i + 1}/${executionPlan.attemptCodes.length}`
+						);
+						outputChannel.appendLine("");
+					}
+					return result;
+				}
+
+				lastResult = result;
+				const hasNext = i < executionPlan.attemptCodes.length - 1;
+				if (!hasNext) {
+					return result;
+				}
+
+				outputChannel.appendLine(
+					`[${new Date().toLocaleTimeString()}] SMART CONTEXT VALIDATION FAILED attempt ${i + 1}/${executionPlan.attemptCodes.length}: ${result.summary}`
+				);
+				if (result.detail) {
+					outputChannel.appendLine(result.detail);
+				}
+				outputChannel.appendLine("Falling back to wider context.");
+				outputChannel.appendLine("");
+			}
+
+			return (
+				lastResult ?? {
+					kind: "error",
+					summary: "Preview failed.",
+					detail: "No execution attempt was completed."
+				}
+			);
+		})();
+
+		return {
+			promise,
+			cancel: () => {
+				cancelled = true;
+				activeTask?.cancel();
+			}
+		};
+	}
+
+	function cancelledPreviewResult(): PreviewResult {
+		return {
+			kind: "text",
+			summary: "Preview cancelled.",
+			detail: "The previous preview task was cancelled because a new selection was made."
+		};
 	}
 
 	function publishResult(editor: vscode.TextEditor, result: PreviewResult, line?: number): void {
@@ -547,14 +626,44 @@ function isREditor(editor: vscode.TextEditor): boolean {
 function buildCodeByContextMode(
 	editor: vscode.TextEditor,
 	selection: vscode.Selection,
-	mode: "selectionOnly" | "documentBeforeSelection"
+	mode: ContextMode
 ): string {
 	const selected = editor.document.getText(selection);
 	if (mode === "selectionOnly") {
 		return selected;
 	}
 
+	if (mode === "smartContext") {
+		return buildSmartContextCode(editor, selection);
+	}
+
 	const beforeRange = new vscode.Range(new vscode.Position(0, 0), selection.start);
 	const before = editor.document.getText(beforeRange);
 	return `${before}\n${selected}`;
+}
+
+interface ContextExecutionPlan {
+	primaryCode: string;
+	attemptCodes: string[];
+}
+
+function buildExecutionPlan(
+	editor: vscode.TextEditor,
+	selection: vscode.Selection,
+	mode: ContextMode
+): ContextExecutionPlan {
+	const primary = buildCodeByContextMode(editor, selection, mode);
+	const attempts = [primary];
+
+	if (mode === "smartContext") {
+		const wider = buildCodeByContextMode(editor, selection, "documentBeforeSelection");
+		if (!attempts.includes(wider)) {
+			attempts.push(wider);
+		}
+	}
+
+	return {
+		primaryCode: primary,
+		attemptCodes: attempts
+	};
 }

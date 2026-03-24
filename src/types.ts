@@ -26,7 +26,7 @@ export type PreviewResult =
   | ({ kind: "text" } & PreviewResultBase)
   | ({ kind: "error" } & PreviewResultBase);
 
-export type ContextMode = "selectionOnly" | "documentBeforeSelection";
+export type ContextMode = "selectionOnly" | "documentBeforeSelection" | "smartContext";
 
 export interface SelectionCheck {
   ok: boolean;

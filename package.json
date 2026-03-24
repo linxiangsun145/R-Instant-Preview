@@ -118,9 +118,10 @@
           "default": "documentBeforeSelection",
           "enum": [
             "selectionOnly",
-            "documentBeforeSelection"
+            "documentBeforeSelection",
+            "smartContext"
           ],
-          "markdownDescription": "Execution context mode. `selectionOnly`: run only selected code. `documentBeforeSelection`: run code from document start to selection start, then run selected code. This can execute extra code and may cause side effects."
+          "markdownDescription": "Execution context mode. `selectionOnly`: run only selected code. `documentBeforeSelection`: run code from document start to selection start, then run selected code. `smartContext`: analyze selected expression dependencies and execute minimal required upstream assignments first, then automatically fallback to wider context if validation fails in the long-lived R session."
         },
         "rHiddenPreview.maxOutputLength": {
           "type": "number",
@@ -154,7 +155,8 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "test:smart-context": "npm run compile && node out/test/smartContext.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.14.15",
