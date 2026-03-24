@@ -13,5 +13,6 @@ coverage/
 dist/
 tmp/
 temp/
+*.code-workspace
 Thumbs.db
 .DS_Store
