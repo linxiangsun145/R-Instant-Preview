@@ -89,6 +89,14 @@ Runtime validation behavior:
 - Validation: execute in long-lived R session.
 - Fallback: if execution fails (for example missing object), automatically retry with wider `documentBeforeSelection` context.
 
+Incremental execution behavior:
+
+- Uses long-lived R session state as runtime cache.
+- Splits context into logical code blocks.
+- Hashes each block and tracks block-level variable dependencies.
+- Marks dirty blocks when content or dependency shape changes.
+- Executes only dirty blocks plus affected downstream blocks (instead of re-running all context).
+
 Example:
 
 ```r

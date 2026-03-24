@@ -10,6 +10,7 @@ import { ContextMode, PreviewResult } from "./types";
 import { resolveRscriptPath } from "./util/rscriptResolver";
 import { hashCodeContext } from "./util/hash";
 import { buildSmartContextCode } from "./util/smartContext";
+import { IncrementalExecutionManager } from "./util/incrementalExecution";
 
 export function activate(context: vscode.ExtensionContext): void {
   const initialConfig = getConfig();
@@ -32,6 +33,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	const executionDedupWindowMs = 1500;
 	const resultCache = new Map<string, PreviewResult>();
 	const inFlightTasks = new Map<string, RunningPreviewTask>();
+	const incrementalExecution = new IncrementalExecutionManager();
   const debounced = createDebouncedExecutor(initialConfig.debounceMs);
 	let runningTask: RunningPreviewTask | undefined;
 	let runningTaskKey: string | undefined;
@@ -157,7 +159,10 @@ export function activate(context: vscode.ExtensionContext): void {
 	});
 
 	context.subscriptions.push(
-		{ dispose: () => runner.dispose() },
+		{ dispose: () => {
+			runner.dispose();
+			incrementalExecution.resetAll();
+		} },
 		openPanelCommand,
 		showOutputCommand,
 		hoverProvider,
@@ -226,7 +231,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			return;
 		}
 
-		const executionPlan = buildExecutionPlan(editor, selection, config.contextMode);
+		const executionPlan = buildExecutionPlan(editor, selection, config.contextMode, editor.document.fileName);
 		const targetLine = selection.end.line;
 		const executionKey = hashCodeContext(executionPlan.primaryCode, `${editor.document.fileName}\n${config.contextMode}`);
 		const now = Date.now();
@@ -296,19 +301,27 @@ export function activate(context: vscode.ExtensionContext): void {
 
 		const promise = (async (): Promise<PreviewResult> => {
 			let lastResult: PreviewResult | undefined;
-			for (let i = 0; i < executionPlan.attemptCodes.length; i += 1) {
+			for (let i = 0; i < executionPlan.attempts.length; i += 1) {
 				if (cancelled) {
 					return cancelledPreviewResult();
 				}
 
-				const code = executionPlan.attemptCodes[i];
-				if (executionPlan.attemptCodes.length > 1 && i > 0) {
-					statusItem.text = `R Hidden Preview: Fallback ${i + 1}/${executionPlan.attemptCodes.length}`;
+				const attempt = executionPlan.attempts[i];
+				if (executionPlan.attempts.length > 1 && i > 0) {
+					statusItem.text = `R Hidden Preview: Fallback ${i + 1}/${executionPlan.attempts.length}`;
 				}
+
+				const incrementalPlan = incrementalExecution.createPlan(attempt.scopeKey, attempt.code);
+				const runCode = incrementalPlan.executionCode || attempt.code;
+
+				outputChannel.appendLine(
+					`[${new Date().toLocaleTimeString()}] INCREMENTAL ${attempt.label}: blocks ${incrementalPlan.executeBlockCount}/${incrementalPlan.totalBlocks}, reused ${incrementalPlan.reusedBlockCount}, reason=${incrementalPlan.reason}`
+				);
+				outputChannel.appendLine("");
 
 				activeTask = runner.run({
 					rscriptPath: config.rscriptPath,
-					fullCode: code,
+					fullCode: runCode,
 					timeoutMs: config.timeoutMs,
 					maxOutputLength: config.maxOutputLength
 				});
@@ -319,23 +332,25 @@ export function activate(context: vscode.ExtensionContext): void {
 				}
 
 				if (result.kind === "text") {
+					incrementalExecution.commitPlan(incrementalPlan);
 					if (i > 0) {
 						outputChannel.appendLine(
-							`[${new Date().toLocaleTimeString()}] SMART CONTEXT FALLBACK SUCCESS attempt ${i + 1}/${executionPlan.attemptCodes.length}`
+							`[${new Date().toLocaleTimeString()}] SMART CONTEXT FALLBACK SUCCESS attempt ${i + 1}/${executionPlan.attempts.length}`
 						);
 						outputChannel.appendLine("");
 					}
 					return result;
 				}
 
+				incrementalExecution.invalidate(attempt.scopeKey);
 				lastResult = result;
-				const hasNext = i < executionPlan.attemptCodes.length - 1;
+				const hasNext = i < executionPlan.attempts.length - 1;
 				if (!hasNext) {
 					return result;
 				}
 
 				outputChannel.appendLine(
-					`[${new Date().toLocaleTimeString()}] SMART CONTEXT VALIDATION FAILED attempt ${i + 1}/${executionPlan.attemptCodes.length}: ${result.summary}`
+					`[${new Date().toLocaleTimeString()}] SMART CONTEXT VALIDATION FAILED attempt ${i + 1}/${executionPlan.attempts.length}: ${result.summary}`
 				);
 				if (result.detail) {
 					outputChannel.appendLine(result.detail);
@@ -644,26 +659,43 @@ function buildCodeByContextMode(
 
 interface ContextExecutionPlan {
 	primaryCode: string;
-	attemptCodes: string[];
+	attempts: ContextExecutionAttempt[];
+}
+
+interface ContextExecutionAttempt {
+	label: string;
+	scopeKey: string;
+	code: string;
 }
 
 function buildExecutionPlan(
 	editor: vscode.TextEditor,
 	selection: vscode.Selection,
-	mode: ContextMode
+	mode: ContextMode,
+	documentKey: string
 ): ContextExecutionPlan {
 	const primary = buildCodeByContextMode(editor, selection, mode);
-	const attempts = [primary];
+	const attempts: ContextExecutionAttempt[] = [
+		{
+			label: `${mode}:primary`,
+			scopeKey: `${documentKey}\n${mode}\nprimary`,
+			code: primary
+		}
+	];
 
 	if (mode === "smartContext") {
 		const wider = buildCodeByContextMode(editor, selection, "documentBeforeSelection");
-		if (!attempts.includes(wider)) {
-			attempts.push(wider);
+		if (!attempts.some((attempt) => attempt.code === wider)) {
+			attempts.push({
+				label: "smart:fallback-documentBeforeSelection",
+				scopeKey: `${documentKey}\nsmartContext\nfallback-documentBeforeSelection`,
+				code: wider
+			});
 		}
 	}
 
 	return {
 		primaryCode: primary,
-		attemptCodes: attempts
+		attempts
 	};
 }

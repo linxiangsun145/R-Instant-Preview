@@ -156,7 +156,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test:smart-context": "npm run compile && node out/test/smartContext.test.js"
+    "test:smart-context": "npm run compile && node out/test/smartContext.test.js",
+    "test:incremental": "npm run compile && node out/test/incrementalExecution.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.14.15",
