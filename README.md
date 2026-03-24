@@ -15,6 +15,7 @@ This project is designed as a stable, maintainable first version suitable for Ma
 - Only active on R files.
 - Automatic trigger on selection change (no manual Run click required).
 - Hidden asynchronous execution using `child_process.spawn()`.
+- Long-lived R session runtime (single persistent R process for repeated previews).
 - Two-layer result UI:
   - Inline summary (`TextEditorDecorationType`)
   - Detailed panel (`WebviewPanel`)
