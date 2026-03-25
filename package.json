@@ -2,7 +2,7 @@
   "name": "r-instant-preview",
   "displayName": "R Instant Preview",
   "description": "Instantly preview selected R code results inline and in a dedicated panel with smart context analysis.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "linxiangsun145",
   "icon": "images/icon.png",
   "license": "MIT",
