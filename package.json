@@ -24,8 +24,11 @@
   "keywords": [
     "R",
     "preview",
-    "Rscript",
-    "selection"
+    "data analysis",
+    "plot",
+    "statistics",
+    "inline",
+    "notebook"
   ],
   "activationEvents": [
     "onLanguage:r",
